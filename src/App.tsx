@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Sun, Moon, PanelLeft, X } from "lucide-react";
+import { Plus, Sun, Moon, PanelLeft, X, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { api, type DocMeta, type Doc, type CommentRecord, type PublishedRecord } from "./api";
-import Editor, { type SaveState } from "./Editor";
-import PublishedView from "./PublishedView";
+import { api, type DocMeta, type Doc, type CommentRecord } from "./api";
+import Editor, { type SaveState, type ShareSnapshot } from "./Editor";
+import SharedView from "./SharedView";
+import { publishShare, deleteShare, type ShareProgress } from "./share";
 
 type Theme = "light" | "dark";
 
@@ -13,24 +14,24 @@ function initialTheme(): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function pathSlug(): string | null {
-  const path = window.location.pathname.replace(/^\/+|\/+$/g, "");
-  if (!path || path.includes("/")) return null;
-  if (!/^[a-z0-9][a-z0-9-]{0,80}$/i.test(path)) return null;
-  // Reserved app paths
-  if (["api", "uploads", "fonts", "assets", "sw.js"].includes(path.toLowerCase())) return null;
-  return path.toLowerCase();
+function sharePathId(): string | null {
+  const m = /^\/s\/([a-z0-9]{6,32})\/?$/i.exec(window.location.pathname);
+  return m ? m[1].toLowerCase() : null;
+}
+
+function requestedDocId(): string | null {
+  const id = new URLSearchParams(window.location.search).get("doc");
+  return id && /^[a-f0-9]{8,32}$/i.test(id) ? id : null;
 }
 
 export default function App() {
+  const [shareId] = useState(sharePathId);
   const [docs, setDocs] = useState<DocMeta[] | null>(null);
   const [current, setCurrent] = useState<Doc | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [published, setPublished] = useState<PublishedRecord | null | undefined>(() =>
-    pathSlug() ? undefined : null
-  );
+  const [sharedIds, setSharedIds] = useState<Set<string>>(new Set());
   const currentRef = useRef<Doc | null>(null);
   currentRef.current = current;
 
@@ -39,33 +40,34 @@ export default function App() {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  // Published article routes
-  useEffect(() => {
-    const slug = pathSlug();
-    if (!slug) {
-      setPublished(null);
-      return;
+  const refresh = useCallback(async () => {
+    const list = await api.list();
+    setDocs(list);
+    const shared = new Set<string>();
+    for (const m of list) {
+      const d = await api.get(m.id).catch(() => null);
+      if (d?.share) shared.add(d.id);
     }
-    let cancelled = false;
-    (async () => {
-      const rec = await api.getPublished(slug);
-      if (!cancelled) setPublished(rec);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    setSharedIds(shared);
   }, []);
 
-  const refresh = useCallback(async () => setDocs(await api.list()), []);
-
   useEffect(() => {
-    if (published !== null) return; // wait until we know we're not on a published page
+    if (shareId) return;
     (async () => {
+      await refresh();
       const list = await api.list();
-      setDocs(list);
+      const wanted = requestedDocId();
+      if (wanted) {
+        window.history.replaceState({}, "", "/");
+        const doc = await api.get(wanted).catch(() => null);
+        if (doc) {
+          setCurrent(doc);
+          return;
+        }
+      }
       if (list[0] && window.innerWidth > 720) setCurrent(await api.get(list[0].id));
     })();
-  }, [published]);
+  }, [shareId, refresh]);
 
   const open = async (id: string) => {
     setMenuOpen(false);
@@ -83,9 +85,16 @@ export default function App() {
   };
 
   const removeDoc = async (id: string) => {
+    const doc = await api.get(id).catch(() => null);
+    if (doc?.share) await deleteShare(doc.share).catch(() => {});
     await api.remove(id);
     const list = await api.list();
     setDocs(list);
+    setSharedIds((s) => {
+      const n = new Set(s);
+      n.delete(id);
+      return n;
+    });
     if (currentRef.current?.id === id) {
       setSaveState("saved");
       setCurrent(list[0] && window.innerWidth > 720 ? await api.get(list[0].id) : null);
@@ -112,29 +121,39 @@ export default function App() {
     }
   }, []);
 
-  const publish = useCallback(async (slug: string): Promise<string | null> => {
-    const doc = currentRef.current;
-    if (!doc) return null;
-    try {
-      await api.publish(doc.id, slug);
-      setCurrent((c) => (c ? { ...c, publishedSlug: slug } : c));
-      return null;
-    } catch (e) {
-      return (e as Error).message;
-    }
-  }, []);
-
-  const unpublish = useCallback(async () => {
+  const share = useCallback(async (snapshot: ShareSnapshot, author: string, onProgress: (p: ShareProgress) => void) => {
     const doc = currentRef.current;
     if (!doc) return;
-    await api.unpublish(doc.id);
-    setCurrent((c) => (c ? { ...c, publishedSlug: null } : c));
+    // Flush what's on screen first so the link matches exactly what the author sees.
+    const { updatedAt } = await api.save(doc.id, snapshot.title, snapshot.content, doc.comments);
+    const fresh: Doc = { ...doc, title: snapshot.title, content: snapshot.content, updatedAt };
+    const info = await publishShare(fresh, author, onProgress);
+    await api.setShare(doc.id, info);
+    setCurrent((c) => (c && c.id === doc.id ? { ...c, title: fresh.title, content: fresh.content, updatedAt, share: info } : c));
+    setDocs((d) => (d ? d.map((m) => (m.id === doc.id ? { ...m, title: fresh.title, updatedAt } : m)) : d));
+    setSharedIds((s) => new Set(s).add(doc.id));
   }, []);
 
-  const leavePublished = () => {
-    window.history.pushState({}, "", "/");
-    setPublished(null);
-  };
+  const unshare = useCallback(async () => {
+    const doc = currentRef.current;
+    if (!doc?.share) return;
+    await deleteShare(doc.share);
+    await api.setShare(doc.id, null);
+    setCurrent((c) => (c && c.id === doc.id ? { ...c, share: null } : c));
+    setSharedIds((s) => {
+      const n = new Set(s);
+      n.delete(doc.id);
+      return n;
+    });
+  }, []);
+
+  const seenComments = useCallback(async () => {
+    const doc = currentRef.current;
+    if (!doc?.share) return;
+    const info = { ...doc.share, seenCommentsAt: new Date().toISOString() };
+    await api.setShare(doc.id, info);
+    setCurrent((c) => (c && c.id === doc.id ? { ...c, share: info } : c));
+  }, []);
 
   const status = current
     ? saveState === "saved"
@@ -144,12 +163,8 @@ export default function App() {
         : "Editing…"
     : "";
 
-  if (published === undefined) {
-    return <div className="app-loading" aria-busy="true" />;
-  }
-
-  if (published) {
-    return <PublishedView record={published} onBack={leavePublished} />;
+  if (shareId) {
+    return <SharedView id={shareId} />;
   }
 
   return (
@@ -193,6 +208,11 @@ export default function App() {
                 <div className="doc-title">{d.title.trim() || "Untitled"}</div>
                 <div className="doc-date">
                   {new Date(d.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  {sharedIds.has(d.id) && (
+                    <span className="doc-shared" title="Shared">
+                      <Link2 className="size-3" />
+                    </span>
+                  )}
                 </div>
                 <button
                   className="doc-delete"
@@ -200,7 +220,7 @@ export default function App() {
                   aria-label="Delete document"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (confirm("Delete this document?")) removeDoc(d.id);
+                    if (confirm(sharedIds.has(d.id) ? "Delete this document? Its shared link will stop working." : "Delete this document?")) removeDoc(d.id);
                   }}
                 >
                   ×
@@ -241,11 +261,13 @@ export default function App() {
             title={current.title}
             content={current.content}
             comments={current.comments ?? []}
-            publishedSlug={current.publishedSlug}
+            share={current.share}
+            updatedAt={current.updatedAt}
             onDirty={() => setSaveState("unsaved")}
             onSave={save}
-            onPublish={publish}
-            onUnpublish={unpublish}
+            onShare={share}
+            onUnshare={unshare}
+            onSeenComments={seenComments}
           />
         ) : (
           <div className="welcome">

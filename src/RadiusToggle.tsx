@@ -1,6 +1,7 @@
 export default function RadiusToggle({ radius, onChange }: { radius: number; onChange: (r: number) => void }) {
   return (
     <button
+      type="button"
       className="radius-toggle"
       contentEditable={false}
       title={radius ? "Square corners" : "Round corners"}

@@ -1,5 +1,4 @@
 import { idbDelete, idbGet, idbGetAll, idbPut } from "./db";
-import { renderArticleHtml } from "./publishClient";
 
 export interface DocMeta {
   id: string;
@@ -8,6 +7,7 @@ export interface DocMeta {
   updatedAt: string;
 }
 
+/** Author's own notes, anchored to text with a comment mark. Stored locally with the document. */
 export interface CommentRecord {
   id: string;
   text: string;
@@ -15,18 +15,24 @@ export interface CommentRecord {
   resolved: boolean;
 }
 
+/** Link state for a document that has been shared to the server. */
+export interface ShareInfo {
+  id: string;
+  /** Secret that proves authorship to the server. Never leaves this browser except as a bearer header. */
+  token: string;
+  url: string;
+  /** When the snapshot on the server was last updated. */
+  sharedAt: string;
+  /** Reader comments created after this are "new" to the author. */
+  seenCommentsAt?: string;
+}
+
 export interface Doc extends DocMeta {
   content: unknown;
   comments: CommentRecord[];
+  share?: ShareInfo | null;
+  /** Legacy field from the browser-only publish flow; no longer used. */
   publishedSlug?: string | null;
-}
-
-export interface PublishedRecord {
-  slug: string;
-  title: string;
-  html: string;
-  docId: string;
-  publishedAt: string;
 }
 
 function newId(): string {
@@ -47,6 +53,12 @@ export const api = {
     const doc = await idbGet<Doc>("docs", id);
     if (!doc) throw new Error("not found");
     return { ...doc, comments: doc.comments ?? [] };
+  },
+
+  /** Find the local document behind a share id, so the author sees "Edit" on their own share page. */
+  async findByShare(shareId: string): Promise<Doc | null> {
+    const docs = await idbGetAll<Doc>("docs");
+    return docs.find((d) => d.share?.id === shareId) ?? null;
   },
 
   async create(): Promise<Doc> {
@@ -76,62 +88,18 @@ export const api = {
     return { ok: true, updatedAt };
   },
 
-  async remove(id: string): Promise<{ ok: true }> {
+  /** Update share metadata without touching updatedAt, so it doesn't look like an edit. */
+  async setShare(id: string, share: ShareInfo | null): Promise<void> {
     const doc = await idbGet<Doc>("docs", id);
-    if (doc?.publishedSlug) await idbDelete("published", doc.publishedSlug);
+    if (!doc) throw new Error("not found");
+    await idbPut("docs", { ...doc, share });
+  },
+
+  async remove(id: string): Promise<{ ok: true }> {
     await idbDelete("docs", id);
     return { ok: true };
   },
-
-  async publish(id: string, slug: string): Promise<{ ok: true; slug: string }> {
-    const doc = await idbGet<Doc>("docs", id);
-    if (!doc) throw new Error("not found");
-    if (!/^[a-z0-9][a-z0-9-]{0,80}$/.test(slug)) {
-      throw new Error("Invalid slug. Use lowercase letters, numbers, and dashes.");
-    }
-    const existing = await idbGet<PublishedRecord>("published", slug);
-    if (existing && existing.docId !== id) throw new Error("That slug is already in use.");
-
-    const html = renderArticleHtml(doc.content);
-    const record: PublishedRecord = {
-      slug,
-      title: doc.title,
-      html,
-      docId: id,
-      publishedAt: new Date().toISOString(),
-    };
-    await idbPut("published", record);
-
-    if (doc.publishedSlug && doc.publishedSlug !== slug) {
-      await idbDelete("published", doc.publishedSlug);
-    }
-    await idbPut("docs", { ...doc, publishedSlug: slug, updatedAt: new Date().toISOString() });
-    return { ok: true, slug };
-  },
-
-  async unpublish(id: string): Promise<{ ok: true }> {
-    const doc = await idbGet<Doc>("docs", id);
-    if (!doc) throw new Error("not found");
-    if (doc.publishedSlug) {
-      await idbDelete("published", doc.publishedSlug);
-      await idbPut("docs", { ...doc, publishedSlug: null, updatedAt: new Date().toISOString() });
-    }
-    return { ok: true };
-  },
-
-  async getPublished(slug: string): Promise<PublishedRecord | null> {
-    return (await idbGet<PublishedRecord>("published", slug)) ?? null;
-  },
 };
-
-export async function uploadImage(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("upload failed"));
-    reader.readAsDataURL(file);
-  });
-}
 
 export function slugify(s: string): string {
   return s
@@ -139,4 +107,13 @@ export function slugify(s: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
+}
+
+const AUTHOR_KEY = "authorName";
+export function getAuthorName(): string {
+  return localStorage.getItem(AUTHOR_KEY) ?? "";
+}
+export function setAuthorName(name: string) {
+  if (name.trim()) localStorage.setItem(AUTHOR_KEY, name.trim());
+  else localStorage.removeItem(AUTHOR_KEY);
 }

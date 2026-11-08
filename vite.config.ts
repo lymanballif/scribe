@@ -32,7 +32,7 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/i\//, /^\/s\//],
         globPatterns: ["**/*.{js,css,html,woff2,png,svg,ico,webmanifest}"],
         runtimeCaching: [
           {
@@ -56,9 +56,10 @@ export default defineConfig({
     },
   },
   server: {
+    port: 5190,
     proxy: {
-      "/api": "http://localhost:4000",
-      "/uploads": "http://localhost:4000",
+      "/api": "http://localhost:4871",
+      "/i": "http://localhost:4871",
     },
   },
   build: {
