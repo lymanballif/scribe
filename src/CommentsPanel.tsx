@@ -47,7 +47,7 @@ export default function CommentsPanel({
   const resolved = comments.filter((c) => c.resolved);
 
   return (
-    <div className={"comments-panel" + (open ? " open" : "")} aria-hidden={!open}>
+    <div className={"comments-panel" + (open ? " open" : "")} inert={!open}>
       <div className="comments-panel-header">
         <span className="comments-panel-title">Comments</span>
         {onClose && (

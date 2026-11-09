@@ -239,7 +239,7 @@ export default function SharedView({ id }: { id: string }) {
           </ol>
         )}
 
-        <Composer key="general" quote={null} onSubmit={(t, n) => submit(t, n, null)} />
+        <Composer key="general" quote={null} defaultName={owner ? share.author ?? "" : undefined} onSubmit={(t, n) => submit(t, n, null)} />
       </section>
 
       <footer className="shared-footer">
@@ -264,6 +264,7 @@ export default function SharedView({ id }: { id: string }) {
           <Composer
             key={composer.quote}
             quote={composer.quote}
+            defaultName={owner ? share.author ?? "" : undefined}
             autoFocus
             onCancel={() => {
               setComposer(null);
@@ -280,16 +281,19 @@ export default function SharedView({ id }: { id: string }) {
 
 function Composer({
   quote,
+  defaultName,
   autoFocus,
   onSubmit,
   onCancel,
 }: {
   quote: string | null;
+  /** The author's own browser posts as the author; readers get the name they used last time. */
+  defaultName?: string;
   autoFocus?: boolean;
   onSubmit: (text: string, name: string) => Promise<void>;
   onCancel?: () => void;
 }) {
-  const [name, setName] = useState(getReaderName);
+  const [name, setName] = useState(() => defaultName || getReaderName());
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
