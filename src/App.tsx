@@ -4,6 +4,9 @@ import { Button } from "@/components/ui/button";
 import { api, type DocMeta, type Doc, type CommentRecord } from "./api";
 import Editor, { type SaveState, type ShareSnapshot } from "./Editor";
 import SharedView from "./SharedView";
+import CloudPanel from "./CloudPanel";
+import EditorLease from "./EditorLease";
+import { startCloud, holdDocument, refreshCloud } from "./cloud";
 import { publishShare, deleteShare, type ShareProgress } from "./share";
 
 type Theme = "light" | "dark";
@@ -31,9 +34,12 @@ export default function App() {
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [editorRevision, setEditorRevision] = useState(0);
   const [sharedIds, setSharedIds] = useState<Set<string>>(new Set());
   const currentRef = useRef<Doc | null>(null);
+  const selection = useRef(0);
   currentRef.current = current;
+  useEffect(() => { holdDocument(current?.id ?? null); }, [current?.id]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -64,16 +70,48 @@ export default function App() {
     })();
   }, [shareId, refresh]);
 
+  useEffect(() => {
+    if (shareId) return;
+    const stop = startCloud();
+    const update = async (event: Event) => {
+      await refresh();
+      const ids = (event as CustomEvent<string[]>).detail;
+      const id = currentRef.current?.id;
+      if (id && ids.includes(id)) {
+        const doc = await api.get(id).catch(() => null);
+        // A new document selection may have happened while the cache was read.
+        if (currentRef.current?.id === id) { setCurrent(doc); setEditorRevision(value => value + 1); }
+      }
+    };
+    window.addEventListener("scribe-cloud-documents", update);
+    return () => { stop(); window.removeEventListener("scribe-cloud-documents", update); };
+  }, [shareId, refresh]);
+
   const open = async (id: string) => {
+    const request = ++selection.current;
     setMenuOpen(false);
-    if (currentRef.current?.id === id) return;
+    setCurrent(null); holdDocument(null);
+    // Let the previous editor release its cross-tab lock before applying remote changes.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await refreshCloud();
+    if (request !== selection.current) return;
+    holdDocument(id);
+    const selected = await api.get(id).catch(() => null);
+    if (request !== selection.current) return;
     setSaveState("saved");
-    setCurrent(await api.get(id));
+    setCurrent(selected);
+  };
+
+  const reloadCloud = async () => {
+    const id = currentRef.current?.id;
+    if (id) await open(id); else await refreshCloud();
   };
 
   const createDoc = async () => {
+    const request = ++selection.current;
     const doc = await api.create();
     await refresh();
+    if (request !== selection.current) return;
     setSaveState("saved");
     setMenuOpen(false);
     setCurrent(doc);
@@ -96,13 +134,12 @@ export default function App() {
     }
   };
 
-  const save = useCallback(async (title: string, content: unknown, comments: CommentRecord[]) => {
-    const doc = currentRef.current;
-    if (!doc) return;
+  const save = useCallback(async (id: string, title: string, content: unknown, comments: CommentRecord[]) => {
+    const doc = { id };
     setSaveState("saving");
     try {
       const { updatedAt } = await api.save(doc.id, title, content, comments);
-      setSaveState("saved");
+      if (currentRef.current?.id === doc.id) setSaveState("saved");
       setCurrent((c) => (c && c.id === doc.id ? { ...c, title, content, comments, updatedAt } : c));
       setDocs((d) =>
         d
@@ -112,7 +149,7 @@ export default function App() {
           : d
       );
     } catch {
-      setSaveState("unsaved");
+      if (currentRef.current?.id === doc.id) setSaveState("unsaved");
     }
   }, []);
 
@@ -152,7 +189,7 @@ export default function App() {
 
   const status = current
     ? saveState === "saved"
-      ? "Saved"
+      ? "Saved here"
       : saveState === "saving"
         ? "Saving…"
         : "Editing…"
@@ -224,6 +261,7 @@ export default function App() {
             ))
           )}
         </div>
+        <CloudPanel currentId={current?.id} onSync={reloadCloud} />
         <div className="sidebar-bottom">
           <span className="sidebar-status">{status}</span>
           <Button
@@ -250,20 +288,20 @@ export default function App() {
           <span className="mobile-status">{status}</span>
         </header>
         {current ? (
-          <Editor
-            key={current.id}
+          <EditorLease key={`${current.id}:${editorRevision}`} id={current.id} onLoad={doc => setCurrent(doc)}>{fresh => <Editor
+            key={`${current.id}:${editorRevision}`}
             docId={current.id}
-            title={current.title}
-            content={current.content}
-            comments={current.comments ?? []}
+            title={fresh.title}
+            content={fresh.content}
+            comments={fresh.comments ?? []}
             share={current.share}
             updatedAt={current.updatedAt}
-            onDirty={() => setSaveState("unsaved")}
-            onSave={save}
+            onDirty={() => { holdDocument(current.id); setSaveState("unsaved"); }}
+            onSave={(title, content, comments) => save(current.id, title, content, comments)}
             onShare={share}
             onUnshare={unshare}
             onSeenComments={seenComments}
-          />
+          />}</EditorLease>
         ) : (
           <div className="welcome">
             <p>Your ideas, kept safe.</p>

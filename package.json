@@ -2,7 +2,7 @@
   "name": "scribe",
   "version": "1.0.0",
   "private": true,
-  "description": "A quiet place for your ideas — local-first writing PWA",
+  "description": "A quiet place for your ideas \u2014 local-first writing PWA",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n server,vite -c blue,magenta \"tsx watch server/index.ts\" \"vite\"",
@@ -12,7 +12,9 @@
     "start": "NODE_ENV=production tsx server/index.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
     "backup": "bash scripts/backup.sh",
-    "icons": "node scripts/gen-icons.mjs"
+    "icons": "node scripts/gen-icons.mjs",
+    "test": "node --import tsx --test tests/cloud.test.ts",
+    "test:postgres": "SCRIBE_TEST_POSTGRES=1 node --import tsx --test tests/cloud-postgres.test.ts"
   },
   "keywords": [
     "writing",

@@ -109,7 +109,7 @@ export default function Editor({
   const [dragging, setDragging] = useState(false);
   const [adding, setAdding] = useState<{ done: number; total: number } | null>(null);
   const [plusOpen, setPlusOpen] = useState(false);
-  const saveTimer = useRef<number | null>(null);
+
   const titleRef = useRef<HTMLInputElement>(null);
   const commentsRef = useRef(comments);
   commentsRef.current = comments;
@@ -117,10 +117,9 @@ export default function Editor({
   const scheduleSave = useCallback(
     (ed: TiptapEditor) => {
       onDirty();
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => {
-        onSave(titleRef.current?.value ?? "", ed.getJSON(), commentsRef.current);
-      }, 800);
+      // Persist each edit locally. Cloud uploads are debounced separately, so
+      // switching documents or closing the editor cannot cancel the last edit.
+      onSave(titleRef.current?.value ?? "", ed.getJSON(), commentsRef.current);
     },
     [onDirty, onSave]
   );
@@ -176,9 +175,6 @@ export default function Editor({
   const editorRef = useRef<TiptapEditor | null>(null);
   editorRef.current = editor;
 
-  useEffect(() => () => {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-  }, []);
 
   // Whole-page drop target: photos dropped on the title or margins land at the end.
   useEffect(() => {

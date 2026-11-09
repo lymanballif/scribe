@@ -7,6 +7,7 @@ import { articleExtensions } from "../shared/articleExtensions";
 import { LIMITS, type ShareComment, type SharePublic } from "../shared/types";
 import { createStore, type Store, type StoredShare } from "./store";
 import { loadShell, renderSharePage } from "./page";
+import { createCloudRouter } from "./cloudRoutes";
 
 const ROOT = process.cwd();
 const DIST = process.env.DIST_DIR ?? path.join(ROOT, "dist");
@@ -152,6 +153,8 @@ export function createApp(store: Store = createStore()) {
     res.setHeader("X-Content-Type-Options", "nosniff");
     next();
   });
+
+  app.use("/api/cloud", createCloudRouter());
 
   const json = express.json({ limit: "5mb" });
 

@@ -1353,3 +1353,19 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Private library status stays distinct from the editor's local save status. */
+.cloud-panel { padding: 10px 16px; border-top: 1px solid var(--border, #8883); font-size: 12px; }
+.cloud-toggle { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; color: inherit; border: 0; cursor: pointer; padding: 8px 0; }
+.cloud-details { line-height: 1.5; }
+.cloud-details p { margin: 8px 0 12px; }
+.cloud-details form { display: grid; gap: 8px; }
+.cloud-details input { min-width: 0; width: 100%; padding: 8px; border: 1px solid #8886; border-radius: 5px; color: inherit; background: transparent; }
+.cloud-details button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #8885; border-radius: 5px; padding: 7px 9px; margin: 4px 5px 5px 0; color: inherit; background: transparent; cursor: pointer; }
+.cloud-details button:disabled { opacity: .5; cursor: default; }
+.cloud-details small { display: block; opacity: .75; }
+.cloud-error { color: #d76655; overflow-wrap: anywhere; }
+.cloud-recovery { max-height: 240px; overflow-y: auto; }
+.cloud-recovery button { width: 100%; text-align: left; overflow-wrap: anywhere; }
+.cloud-import { display: block; margin-top: 8px; }
+.cloud-import input { margin-top: 5px; font-size: 11px; }

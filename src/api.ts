@@ -1,4 +1,5 @@
-import { idbDelete, idbGet, idbGetAll, idbPut } from "./db";
+import { idbGet, idbGetAll } from "./db";
+import { changeDocument } from "./cloud";
 
 export interface DocMeta {
   id: string;
@@ -19,7 +20,7 @@ export interface CommentRecord {
 /** Link state for a document that has been shared to the server. */
 export interface ShareInfo {
   id: string;
-  /** Secret that proves authorship to the server. Never leaves this browser except as a bearer header. */
+  /** Secret that proves authorship to the server. Included in private cloud backups; never included in public document responses. */
   token: string;
   url: string;
   /** When the snapshot on the server was last updated. */
@@ -72,7 +73,7 @@ export const api = {
       createdAt: now,
       updatedAt: now,
     };
-    await idbPut("docs", doc);
+    await changeDocument(doc.id, () => doc);
     return doc;
   },
 
@@ -82,22 +83,24 @@ export const api = {
     content: unknown,
     comments: CommentRecord[]
   ): Promise<{ ok: true; updatedAt: string }> {
-    const doc = await idbGet<Doc>("docs", id);
-    if (!doc) throw new Error("not found");
     const updatedAt = new Date().toISOString();
-    await idbPut("docs", { ...doc, title, content, comments, updatedAt });
+    await changeDocument(id, (doc) => {
+      if (!doc) throw new Error("not found");
+      return { ...doc, title, content, comments, updatedAt };
+    });
     return { ok: true, updatedAt };
   },
 
   /** Update share metadata without touching updatedAt, so it doesn't look like an edit. */
   async setShare(id: string, share: ShareInfo | null): Promise<void> {
-    const doc = await idbGet<Doc>("docs", id);
-    if (!doc) throw new Error("not found");
-    await idbPut("docs", { ...doc, share });
+    await changeDocument(id, (doc) => {
+      if (!doc) throw new Error("not found");
+      return { ...doc, share };
+    });
   },
 
   async remove(id: string): Promise<{ ok: true }> {
-    await idbDelete("docs", id);
+    await changeDocument(id, () => null);
     return { ok: true };
   },
 };
