@@ -2,7 +2,16 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "dist/index.html",
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/s/(.*)", "destination": "/api/index" },
+    { "source": "/i/(.*)", "destination": "/api/index" },
     { "source": "/((?!assets|sw\\.js|workbox|manifest|icon|apple-touch|.*\\..*).*)", "destination": "/index.html" }
   ],
   "headers": [

@@ -43,12 +43,7 @@ export default function App() {
   const refresh = useCallback(async () => {
     const list = await api.list();
     setDocs(list);
-    const shared = new Set<string>();
-    for (const m of list) {
-      const d = await api.get(m.id).catch(() => null);
-      if (d?.share) shared.add(d.id);
-    }
-    setSharedIds(shared);
+    setSharedIds(new Set(list.filter((m) => m.shared).map((m) => m.id)));
   }, []);
 
   useEffect(() => {

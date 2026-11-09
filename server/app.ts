@@ -102,6 +102,12 @@ function validateContent(content: unknown): string | null {
     const srcs: unknown[] = [];
     if (node.type === "image") srcs.push(node.attrs?.src);
     if (node.type === "imageRow") for (const im of node.attrs?.images ?? []) srcs.push(im?.src);
+    if (node.type === "youtube") {
+      const src = node.attrs?.src;
+      if (typeof src !== "string" || !/^https:\/\/(www\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be)\//.test(src)) {
+        problem = "Only YouTube videos can be embedded.";
+      }
+    }
     for (const s of srcs) {
       if (typeof s !== "string" || !/^(\/i\/[a-f0-9]{24,64}\.[a-z]{3,4}|https?:\/\/[^\s"'<>]+)$/.test(s)) {
         problem = "Photos must be uploaded before sharing.";

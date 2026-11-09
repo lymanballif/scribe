@@ -248,6 +248,13 @@ export default function Editor({
     };
   }, [shareId, shareToken]);
 
+  // If the panel is already open when new reader comments arrive, they've been seen.
+  const seenCommentsAt = share?.seenCommentsAt ?? "";
+  useEffect(() => {
+    if (!panelOpen || !share) return;
+    if (readerComments.some((c) => !c.byAuthor && c.createdAt > seenCommentsAt)) onSeenComments();
+  }, [readerComments, panelOpen, share, seenCommentsAt, onSeenComments]);
+
   const words = useMemo(() => {
     if (!editor) return 0;
     return editor.state.doc.textBetween(0, editor.state.doc.content.size, " ", " ").split(/\s+/).filter(Boolean).length;

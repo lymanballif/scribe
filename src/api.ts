@@ -5,6 +5,7 @@ export interface DocMeta {
   title: string;
   createdAt: string;
   updatedAt: string;
+  shared?: boolean;
 }
 
 /** Author's own notes, anchored to text with a comment mark. Stored locally with the document. */
@@ -45,7 +46,7 @@ export const api = {
   async list(): Promise<DocMeta[]> {
     const docs = await idbGetAll<Doc>("docs");
     return docs
-      .map(({ id, title, updatedAt, createdAt }) => ({ id, title, updatedAt, createdAt }))
+      .map(({ id, title, updatedAt, createdAt, share }) => ({ id, title, updatedAt, createdAt, shared: !!share }))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   },
 
