@@ -1,4 +1,5 @@
 import type { Doc, ShareInfo } from "./api";
+import { resolveShareUrl } from "../shared/shareUrl";
 import { dataUrlToBytes, sha256Hex } from "./images";
 import type { ShareComment, SharePublic } from "../shared/types";
 
@@ -173,14 +174,9 @@ export async function publishShare(
   return { id: res.id, token, url: absolute(res.url), sharedAt: new Date().toISOString(), seenCommentsAt: new Date().toISOString() };
 }
 
-/** Links always use the address the author is looking at, so localhost stays localhost and the real domain stays real. */
+/** The publication service may use a separate public reader hostname. */
 function absolute(url: string): string {
-  try {
-    const u = new URL(url, window.location.origin);
-    return `${window.location.origin}${u.pathname}`;
-  } catch {
-    return url;
-  }
+  return resolveShareUrl(url, window.location.origin);
 }
 
 export async function deleteShare(share: ShareInfo): Promise<void> {

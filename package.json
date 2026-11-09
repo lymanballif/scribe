@@ -10,10 +10,11 @@
     "build": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && vite build",
     "preview": "vite preview",
     "start": "NODE_ENV=production tsx server/index.ts",
+    "start:reader": "NODE_ENV=production tsx server/public.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
     "backup": "bash scripts/backup.sh",
     "icons": "node scripts/gen-icons.mjs",
-    "test": "node --import tsx --test tests/cloud.test.ts",
+    "test": "node --import tsx --test tests/cloud.test.ts tests/photo-rows.test.ts tests/public-reader.test.ts",
     "test:postgres": "SCRIBE_TEST_POSTGRES=1 node --import tsx --test tests/cloud-postgres.test.ts"
   },
   "keywords": [

@@ -66,10 +66,13 @@ Environment variables:
 | Variable | Purpose |
 |---|---|
 | `PORT` | listen port (default `4871`) |
+| `HOST` | explicit bind interface. Set the private editor to the verified private/loopback interface; its legacy default listens on all interfaces. The dedicated public reader defaults to `127.0.0.1`. |
 | `DATABASE_URL` | enables the Postgres store |
 | `DATA_DIR` | file-store location (default `./data`) |
 | `SHARE_KEY` | optional. When set, creating shares and uploading photos requires it; the Share popover asks for it once and remembers it in the browser. Set this on any public deployment so strangers can't publish to your server. |
 | `PUBLIC_URL` | optional. Forces the origin used in link-preview tags (otherwise derived from the request). |
+| `PUBLIC_SHARE_URL` | optional separate public reader origin. Share links and previews use this instead of the private editor origin. Does not change private cloud write-origin checks. |
+| `SCRIBE_PUBLIC_READER` | set to `1` only on a separate public reader process. Denies the editor, private cloud, uploads, and author APIs. See below before enabling. |
 
 Security notes: share tokens are random per document and stored hashed; only the holder can update, delete, resolve, or moderate. Article HTML is rendered server-side from the document JSON (never trusted from the client), image uploads are sniffed and limited to webp/jpeg/png/gif, and comments are rate-limited per IP.
 
@@ -86,6 +89,20 @@ Security notes: share tokens are random per document and stored hashed; only the
 Note: the Vercel path is configured but hasn't been exercised in a real deployment yet; the Node server path and both stores have.
 
 **Static-only hosting** still works for the editor and offline writing; Share will explain that sharing isn't set up on that deployment.
+
+### Private editor, public publications
+
+Keep the editor hostname and all author/private-cloud endpoints behind the existing private network. A separate public reader hostname can serve selected published snapshots without exposing drafts. No document is published by cloud sync.
+
+- Set `PUBLIC_URL` on the private editor to its own exact HTTPS origin, and `PUBLIC_SHARE_URL` to the approved public reader origin. The editor retains the public origin in links returned by the server.
+- Start the public process with `npm run start:reader` and the same public share origin. This entrypoint always enforces reader-only mode, even if an environment flag is missing. It defaults to loopback port `4872`; configure the verified proxy/container binding explicitly. The allowlist permits only reading `/s/:id`, public share/comment APIs, public images and static assets, plus posting reader comments. It rejects `/`, private cloud routes, publication creation/updates/deletion, uploads, and author comment moderation. Do not place a static-host catch-all in front of this gate.
+- Separate writer and reader processes require a shared Postgres store, not two processes writing the same file store. The file store's comment locks are process-local. Another supported topology is a single existing backend with an equivalent public reverse-proxy allowlist, after verifying that the private listener cannot be reached publicly.
+- Give the public reader no `DOCUMENTS_KEY`. Its database permissions should be limited to published shares/images and reader comments; it needs no private-document table access. Provision permissions and migrations explicitly before using a restricted role.
+- Retain the existing live database/volume, take a restorable backup before rollout, and preserve all existing publication IDs and image files. Set host-level comment throttling and ensure trusted proxy headers cannot be spoofed.
+- Bind the private editor with an explicit `HOST` and ensure neither its port nor an alternate proxy route bypasses the private network. Do not assume a private hostname alone protects an all-interface listener. Published image URLs are public immutable assets; stopping a share revokes the article page, not already-published image URLs or reader copies.
+- Verify from outside the private network: a user-selected public article, its two-photo row, images and comments load, while the editor, `/api/cloud/*`, uploads and author mutation requests are denied. Also verify that private editing and cloud sync still work from an authorized device. A localhost test is not proof of production routing.
+
+This mode is preparation for deployment, not an active public route. Changing DNS, proxy/network access, or persistent credentials requires the owner's approval. Existing documents must not be automatically published as part of rollout.
 
 ## PWA
 

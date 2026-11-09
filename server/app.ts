@@ -8,6 +8,7 @@ import { LIMITS, type ShareComment, type SharePublic } from "../shared/types";
 import { createStore, type Store, type StoredShare } from "./store";
 import { loadShell, renderSharePage } from "./page";
 import { createCloudRouter } from "./cloudRoutes";
+import { publicReaderOnly } from "./publicReader";
 
 const ROOT = process.cwd();
 const DIST = process.env.DIST_DIR ?? path.join(ROOT, "dist");
@@ -80,7 +81,7 @@ function clientIp(req: Request): string {
 }
 
 function publicUrl(req: Request, pathname: string): string {
-  const base = process.env.PUBLIC_URL?.replace(/\/$/, "");
+  const base = (process.env.PUBLIC_SHARE_URL || process.env.PUBLIC_URL)?.replace(/\/$/, "");
   if (base) return base + pathname;
   const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0] ?? req.protocol;
   const host = (req.headers["x-forwarded-host"] as string | undefined) ?? req.headers.host ?? "localhost";
@@ -144,17 +145,23 @@ function toPublic(share: StoredShare, comments: ShareComment[]): SharePublic {
   };
 }
 
-export function createApp(store: Store = createStore()) {
+export function createApp(store: Store = createStore(), options: { publicReaderOnly?: boolean } = {}) {
+  const configuredMode = process.env.SCRIBE_PUBLIC_READER;
+  if (configuredMode && configuredMode !== "0" && configuredMode !== "1") {
+    throw new Error("SCRIBE_PUBLIC_READER must be 0 or 1; refusing an ambiguous access mode");
+  }
+  const readerMode = options.publicReaderOnly ?? configuredMode === "1";
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", true);
+  if (readerMode) app.use(publicReaderOnly);
 
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     next();
   });
 
-  app.use("/api/cloud", createCloudRouter());
+  if (!readerMode) app.use("/api/cloud", createCloudRouter());
 
   const json = express.json({ limit: "5mb" });
 
